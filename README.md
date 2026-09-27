@@ -8,7 +8,8 @@ The fill width and color follow configurable thresholds; a tap opens a popup wit
 - Second line from an entity (with optional prefix text) or a Jinja2 template
 - Maintenance and "no data" states: a missing value is shown as a grey fill, never as a fake level
 - Visual editor for all options
-- Built-in history popup (no browser_mod needed)
+- Built-in history popup (no browser_mod needed), either from the sensor history or from a long-term
+  statistic, e.g. all measurements imported with their real dates
 
 The card works with any numeric sensor. The [data source section](#data-source-berlin-wasserportal)
 shows a ready-made REST sensor for groundwater stations of the Berlin Wasserportal.
@@ -23,8 +24,9 @@ shows a ready-made REST sensor for groundwater stations of the Berlin Wasserport
 | A sensor with the measurement date | optional second line | e.g. the REST date sensor below |
 | A binary sensor that is `on` during maintenance | optional maintenance state | e.g. the REST binary sensor below |
 | HACS | optional | only as an installation method |
+| [Spook](https://github.com/frenck/spook) and a `shell_command` | optional | only for [importing all measurements](#import-all-measurements-optional) |
 
-No other custom cards or integrations are required.
+The card itself needs no other custom cards or integrations.
 
 ## Installation
 
@@ -136,6 +138,139 @@ Why it is built this way:
 - **`scan_interval: 86400`** fetches once a day. After a maintenance window the sensors may stay
   `unavailable` for up to 24 hours until the next fetch.
 
+## Import all measurements (optional)
+
+The REST sensor keeps only the **latest** row of the CSV. The Wasserportal publishes new values in
+batches (often several weeks at once, some days after the measurement), so the sensor history
+shows one step per batch, dated on the day of the fetch, and the days in between are lost. The
+portal also corrects older values now and then.
+
+This optional setup writes **every** measured day with its real date into a long-term statistic
+and shows it in the popup:
+
+- a `shell_command` downloads the CSV for a date range and prints the rows as statistics JSON,
+- an automation checks, whenever the date sensor reports a new measurement day (and once a day as
+  a fallback), up to which day the statistic already reaches, fetches only the missing days and
+  imports them with `recorder.import_statistics`. On the first run, when the statistic is still
+  empty, it imports the last 10 years.
+
+`recorder.import_statistics` is an action of [Spook](https://github.com/frenck/spook); Home
+Assistant itself offers statistics import only through its WebSocket API. The statistic is an
+external statistic (`wasserportal:groundwater_level`), independent of the sensor, and like all
+long-term statistics it is kept permanently.
+
+### 1. Shell command
+
+Add to `configuration.yaml` and restart Home Assistant (a new `shell_command:` section needs a
+restart; later changes only need `shell_command.reload`):
+
+```yaml
+shell_command:
+  wasserportal_measurements: >-
+    python3 -c 'import sys,re,json,urllib.request as r;from datetime import datetime as D;from zoneinfo import ZoneInfo as Z;u="https://wasserportal.berlin.de/station.php?anzeige=d&smode=c&thema=gws&exportthema=gw&sreihe=ew&station="+sys.argv[1]+"&sdatum="+sys.argv[2]+"&senddatum="+sys.argv[3];t=r.urlopen(r.Request(u,headers={"User-Agent":"HomeAssistant"}),timeout=50).read().decode("latin-1");z=Z("Europe/Berlin");f=lambda v:float(v.replace(",","."));print(json.dumps([{"start":D(int(y),int(m),int(d),tzinfo=z).isoformat(),"mean":f(v),"min":f(v),"max":f(v)} for d,m,y,v in re.findall(r"(?m)^\W?(\d\d)\.(\d\d)\.(\d{4});(\d+,\d+)",t)]))' {{ station }} {{ start }} {{ end }}
+```
+
+It uses the Python interpreter that ships with Home Assistant, no extra packages. Why not
+`rest_command`: the portal declares `charset=utf-8` but sends Latin-1 bytes (umlauts in the CSV
+header), and `rest_command` decodes strictly and fails with a decoding error. The maintenance page
+contains no data rows, so the command then prints `[]` and nothing is imported.
+
+### 2. Automation
+
+Create it in the UI (⋮ → Edit in YAML) and replace `STATION_ID`:
+
+```yaml
+alias: Import groundwater measurements
+description: >-
+  Imports all measured days the REST sensor skipped into the long-term statistic
+  wasserportal:groundwater_level (first run: last 10 years).
+mode: single
+max_exceeded: silent
+triggers:
+  - trigger: state
+    entity_id: sensor.groundwater_level_date
+    not_to: [unavailable, unknown]
+  - trigger: time
+    at: "07:30:00"
+actions:
+  - action: recorder.get_statistics
+    data:
+      statistic_ids: [wasserportal:groundwater_level]
+      start_time: "{{ (now() - timedelta(days=400)).isoformat() }}"
+      period: day
+      types: [mean]
+    response_variable: existing
+  - variables:
+      from_day: >-
+        {%- set z = existing.statistics.get('wasserportal:groundwater_level', []) -%}
+        {%- if z | count > 0 -%}
+          {{ (as_local(as_datetime(z[-1].start)) + timedelta(days=1)).strftime('%d.%m.%Y') }}
+        {%- else -%}
+          {{ (now() - timedelta(days=3652)).strftime('%d.%m.%Y') }}
+        {%- endif -%}
+      latest: "{{ states('sensor.groundwater_level_date') }}"
+  - if:
+      - condition: template
+        value_template: >-
+          {%- set n = strptime(latest, '%d.%m.%Y', none) -%}
+          {{ n is none or n.date() < strptime(from_day, '%d.%m.%Y').date() }}
+    then:
+      - stop: No new measurement day published yet.
+  - variables:
+      blocks: >-
+        {%- set s = strptime(from_day, '%d.%m.%Y') -%}
+        {%- set e = strptime(now().strftime('%d.%m.%Y'), '%d.%m.%Y') -%}
+        {%- set ns = namespace(l=[]) -%}
+        {%- for i in range(0, ((e - s).days // 730) + 1) -%}
+          {%- set a = s + timedelta(days=730 * i) -%}
+          {%- set b = [a + timedelta(days=729), e] | min -%}
+          {%- set ns.l = ns.l + [[a.strftime('%d.%m.%Y'), b.strftime('%d.%m.%Y')]] -%}
+        {%- endfor -%}
+        {{ ns.l }}
+  - repeat:
+      for_each: "{{ blocks }}"
+      sequence:
+        - action: shell_command.wasserportal_measurements
+          data:
+            station: "STATION_ID"
+            start: "{{ repeat.item[0] }}"
+            end: "{{ repeat.item[1] }}"
+          response_variable: fetched
+        - if:
+            - condition: template
+              value_template: "{{ fetched.returncode == 0 and fetched.stdout | length > 2 }}"
+          then:
+            - action: recorder.import_statistics
+              data:
+                statistic_id: wasserportal:groundwater_level
+                source: wasserportal
+                name: Groundwater level (measurements)
+                unit_of_measurement: m ü. NHN
+                has_mean: true
+                has_sum: false
+                stats: "{{ fetched.stdout | from_json }}"
+```
+
+Run it once manually (⋮ → Run actions) to import the last 10 years right away. Details:
+
+- **Blocks of two years.** A template may output at most 262 144 characters; ten years of rows are
+  about 300 KB. Regular updates are a single small block.
+- **"No new measurement day"** ends the run without a request when the statistic already reaches
+  the latest published date.
+- **Re-importing is safe.** An import overwrites existing days, so repeating a range does no harm.
+  Values the portal corrects after they were imported are not fetched again automatically; to
+  refresh a period, clear the statistic in Developer tools → Statistics and run the automation.
+- The dates are local midnight (`Europe/Berlin`), so the statistic shows one value per day.
+
+### 3. Card
+
+```yaml
+type: custom:ha-groundwater-level-card
+entity: sensor.groundwater_level
+statistic_id: wasserportal:groundwater_level
+hours_to_show: 87600   # 10 years in the popup
+```
+
 ## Configuration
 
 ```yaml
@@ -158,6 +293,7 @@ subtitle_prefix: Measured
 | `levels` | see below | Up to 5 threshold levels |
 | `hours_to_show` | `4380` | Period of the history popup in hours (4380 ≈ 6 months) |
 | `popup_title` | `Groundwater level history` | Title of the history popup |
+| `statistic_id` | – | Long-term statistic for the popup instead of the sensor history, drawn as daily values (e.g. `wasserportal:groundwater_level`, see [Import all measurements](#import-all-measurements-optional)) |
 
 Without `subtitle_entity` and `subtitle_template` the card has no second line.
 
@@ -210,6 +346,9 @@ any CSS color.
 A tap (or Enter/Space) opens a dialog with Home Assistant's built-in `history-graph` card for the
 level sensor. Close it with the × button, a click outside or Escape. The popup needs no browser_mod.
 
+With `statistic_id` the popup shows Home Assistant's `statistics-graph` card instead: daily mean
+values of that statistic over `hours_to_show` (converted to days), with the y-axis fitted to the data.
+
 The dialog is attached inside `<home-assistant>`'s shadow root, like Home Assistant's own dialogs.
 The history graph reads its theme data through a Lit context provided by `<home-assistant>`; a
 dialog attached to `document.body` would open, but the graph would stay empty.
@@ -218,6 +357,7 @@ dialog attached to `document.body` would open, but the graph would stay empty.
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.4.0 | 2026-09-27 | New option `statistic_id`: the popup shows a long-term statistic as daily values instead of the sensor history. README: optional import of all measurements with their real dates (shell command + automation). |
 | 1.3.0 | 2026-09-27 | English UI, editor and documentation. Generic maintenance text ("Data source under maintenance"). The stub config finds sensors with `groundwater` or `grundwasser` in the entity ID. First public release. |
 | 1.2.0 | 2026-09-27 | Per-level `animation` switch: without animation no wave and a straight vertical edge at the fill level. |
 | 1.1.0 | 2026-09-27 | Visual editor. Up to 5 threshold levels with color, fill width and wave speed. Second line from an entity or a Jinja2 template. Text shadow removed. `date_entity`/`name` replaced by `subtitle_entity`/`subtitle_prefix`. |

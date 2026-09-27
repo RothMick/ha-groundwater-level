@@ -1,10 +1,10 @@
 /**
- * ha-groundwater-level-card v1.3.0
+ * ha-groundwater-level-card v1.4.0
  * Groundwater level tile with liquid-fill animation and history popup.
  * No dependencies (no Mushroom, card-mod or browser_mod). Details: README.md
  */
 
-const CARD_VERSION = '1.3.0';
+const CARD_VERSION = '1.4.0';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
@@ -330,12 +330,24 @@ class HaGroundwaterLevelCard extends HTMLElement {
       }));
       return;
     }
-    const card = helpers.createCardElement({
-      type: 'history-graph',
-      title: 'History',
-      hours_to_show: this._config.hours_to_show,
-      entities: [this._config.entity],
-    });
+    const c = this._config;
+    const card = helpers.createCardElement(c.statistic_id
+      ? {
+        type: 'statistics-graph',
+        title: 'History',
+        entities: [c.statistic_id],
+        period: 'day',
+        stat_types: ['mean'],
+        chart_type: 'line',
+        fit_y_data: true,
+        days_to_show: Math.max(1, Math.round(c.hours_to_show / 24)),
+      }
+      : {
+        type: 'history-graph',
+        title: 'History',
+        hours_to_show: c.hours_to_show,
+        entities: [c.entity],
+      });
     card.hass = this._hass;
 
     const host = document.createElement('div');
@@ -476,6 +488,7 @@ class HaGroundwaterLevelCardEditor extends HTMLElement {
 
       <div class="section">Popup</div>
       <ha-form id="form-popup"></ha-form>
+      <div class="hint">With a long-term statistic the popup shows its daily values instead of the sensor history, e.g. measurements imported with their real dates.</div>
     `;
     this._rendered = true;
     this._initForms(levels);
@@ -591,8 +604,9 @@ class HaGroundwaterLevelCardEditor extends HTMLElement {
           { name: 'hours_to_show', label: 'History (hours)', selector: { number: { min: 1, max: 87600, mode: 'box' } } },
         ],
       },
-    ], { popup_title: c.popup_title || '', hours_to_show: c.hours_to_show ?? 4380 },
-    v => this._patch({ popup_title: v.popup_title, hours_to_show: v.hours_to_show }));
+      { name: 'statistic_id', label: 'Long-term statistic (optional)', selector: { statistic: {} } },
+    ], { popup_title: c.popup_title || '', hours_to_show: c.hours_to_show ?? 4380, statistic_id: c.statistic_id || '' },
+    v => this._patch({ popup_title: v.popup_title, hours_to_show: v.hours_to_show, statistic_id: v.statistic_id }));
   }
 
   _wireNative(levels) {
