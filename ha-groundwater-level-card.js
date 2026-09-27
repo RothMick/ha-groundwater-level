@@ -1,10 +1,10 @@
 /**
- * ha-groundwater-level-card v1.4.1
+ * ha-groundwater-level-card v1.5.0
  * Groundwater level tile with liquid-fill animation and history popup.
  * No dependencies (no Mushroom, card-mod or browser_mod). Details: README.md
  */
 
-const CARD_VERSION = '1.4.1';
+const CARD_VERSION = '1.5.0';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
@@ -25,6 +25,10 @@ const escapeHtml = s => String(s ?? '').replace(/[&<>"']/g, c => (
 const isMissing = s => MISSING.includes(String(s ?? '').toLowerCase());
 
 const subtitleMode = c => (c.subtitle_template ? 'template' : c.subtitle_entity ? 'entity' : 'none');
+
+// Hours from local midnight on 1 January of this (0) or the previous (1) year until now.
+const hoursSinceYearStart = (yearsBack, now = new Date()) =>
+  Math.ceil((now - new Date(now.getFullYear() - yearsBack, 0, 1)) / 3600000);
 
 const levelLimit = l => (l.below == null || l.below === '' || isNaN(Number(l.below)) ? Infinity : Number(l.below));
 
@@ -321,6 +325,13 @@ class HaGroundwaterLevelCard extends HTMLElement {
     }
   }
 
+  _popupHours() {
+    const range = this._config.popup_range;
+    if (range === 'year') return hoursSinceYearStart(0);
+    if (range === 'previous_year') return hoursSinceYearStart(1);
+    return this._config.hours_to_show;
+  }
+
   async _openPopup() {
     if (this._popup) return;
     const helpers = await window.loadCardHelpers?.();
@@ -331,6 +342,7 @@ class HaGroundwaterLevelCard extends HTMLElement {
       return;
     }
     const c = this._config;
+    const hours = this._popupHours();
     const card = helpers.createCardElement(c.statistic_id
       ? {
         type: 'statistics-graph',
@@ -342,12 +354,13 @@ class HaGroundwaterLevelCard extends HTMLElement {
         stat_types: ['mean'],
         chart_type: 'line',
         fit_y_data: true,
-        days_to_show: Math.max(1, Math.round(c.hours_to_show / 24)),
+        // Rounded up: the graph starts at now - (24 * days + 1) h, so the first day is never cut off.
+        days_to_show: Math.max(1, Math.ceil(hours / 24)),
       }
       : {
         type: 'history-graph',
         title: 'History',
-        hours_to_show: c.hours_to_show,
+        hours_to_show: hours,
         entities: [c.entity],
       });
     card.hass = this._hass;
@@ -599,16 +612,31 @@ class HaGroundwaterLevelCardEditor extends HTMLElement {
       });
     });
 
-    this._setupForm('form-popup', [
-      {
-        type: 'grid', name: '', schema: [
-          { name: 'popup_title', label: 'Title', selector: { text: {} } },
-          { name: 'hours_to_show', label: 'History (hours)', selector: { number: { min: 1, max: 87600, mode: 'box' } } },
-        ],
-      },
+    const popupSchema = range => [
+      { name: 'popup_title', label: 'Title', selector: { text: {} } },
+      { name: 'popup_range', label: 'Period', selector: { select: { mode: 'dropdown', options: [
+        { value: 'hours', label: 'Fixed number of hours' },
+        { value: 'year', label: 'Since 1 January this year' },
+        { value: 'previous_year', label: 'Since 1 January last year' },
+      ] } } },
+      ...(range === 'hours' ? [{ name: 'hours_to_show', label: 'History (hours)', selector: { number: { min: 1, max: 87600, mode: 'box' } } }] : []),
       { name: 'statistic_id', label: 'Long-term statistic (optional)', selector: { statistic: {} } },
-    ], { popup_title: c.popup_title || '', hours_to_show: c.hours_to_show ?? 4380, statistic_id: c.statistic_id || '' },
-    v => this._patch({ popup_title: v.popup_title, hours_to_show: v.hours_to_show, statistic_id: v.statistic_id }));
+    ];
+    const range = c.popup_range || 'hours';
+    this._setupForm('form-popup', popupSchema(range),
+      { popup_title: c.popup_title || '', popup_range: range, hours_to_show: c.hours_to_show ?? 4380, statistic_id: c.statistic_id || '' },
+      v => {
+        const r = v.popup_range || 'hours';
+        // Only store non-default ranges; hours_to_show only matters for the fixed-hours range.
+        this._patch({
+          popup_title: v.popup_title,
+          popup_range: r === 'hours' ? null : r,
+          hours_to_show: r === 'hours' ? v.hours_to_show : null,
+          statistic_id: v.statistic_id,
+        });
+        const form = this._el('form-popup');
+        if (form && form.schema.some(s => s.name === 'hours_to_show') !== (r === 'hours')) form.schema = popupSchema(r);
+      });
   }
 
   _wireNative(levels) {

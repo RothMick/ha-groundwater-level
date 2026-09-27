@@ -152,7 +152,7 @@ and shows it in the popup:
 - an automation checks, whenever the date sensor reports a new measurement day (and once a day as
   a fallback), up to which day the statistic already reaches, fetches only the missing days and
   imports them with `recorder.import_statistics`. On the first run, when the statistic is still
-  empty, it imports the last 10 years.
+  empty, it imports everything since 1 January of the previous year.
 
 `recorder.import_statistics` is an action of [Spook](https://github.com/frenck/spook); Home
 Assistant itself offers statistics import only through its WebSocket API. The statistic is an
@@ -183,7 +183,7 @@ Create it in the UI (⋮ → Edit in YAML) and replace `STATION_ID`:
 alias: Import groundwater measurements
 description: >-
   Imports all measured days the REST sensor skipped into the long-term statistic
-  wasserportal:groundwater_level (first run: last 10 years).
+  wasserportal:groundwater_level (first run: since 1 January of the previous year).
 mode: single
 max_exceeded: silent
 triggers:
@@ -206,7 +206,7 @@ actions:
         {%- if z | count > 0 -%}
           {{ (as_local(as_datetime(z[-1].start)) + timedelta(days=1)).strftime('%d.%m.%Y') }}
         {%- else -%}
-          {{ (now() - timedelta(days=3652)).strftime('%d.%m.%Y') }}
+          {{ '01.01.' ~ (now().year - 1) }}
         {%- endif -%}
       latest: "{{ states('sensor.groundwater_level_date') }}"
   - if:
@@ -251,10 +251,15 @@ actions:
                 stats: "{{ fetched.stdout | from_json }}"
 ```
 
-Run it once manually (⋮ → Run actions) to import the last 10 years right away. Details:
+Run it once manually (⋮ → Run actions) to import the current and the previous year right away.
+Details:
 
+- **More history.** To import further back, replace `'01.01.' ~ (now().year - 1)` with an earlier
+  date such as `(now() - timedelta(days=3652)).strftime('%d.%m.%Y')` for ten years (the portal has
+  data back to the 1990s for many stations).
 - **Blocks of two years.** A template may output at most 262 144 characters; ten years of rows are
-  about 300 KB. Regular updates are a single small block.
+  about 300 KB. The automation therefore fetches and imports long periods in two-year blocks;
+  regular updates are a single small block.
 - **"No new measurement day"** ends the run without a request when the statistic already reaches
   the latest published date.
 - **Re-importing is safe.** An import overwrites existing days, so repeating a range does no harm.
@@ -268,7 +273,7 @@ Run it once manually (⋮ → Run actions) to import the last 10 years right awa
 type: custom:ha-groundwater-level-card
 entity: sensor.groundwater_level
 statistic_id: wasserportal:groundwater_level
-hours_to_show: 87600   # 10 years in the popup
+popup_range: previous_year   # popup from 1 January of the previous year
 ```
 
 ## Configuration
@@ -291,7 +296,8 @@ subtitle_prefix: Measured
 | `subtitle_prefix` | – | Text in front of the entity value, e.g. `Measured` |
 | `subtitle_template` | – | Second line as a Jinja2 template (takes precedence over `subtitle_entity`) |
 | `levels` | see below | Up to 5 threshold levels |
-| `hours_to_show` | `4380` | Period of the history popup in hours (4380 ≈ 6 months) |
+| `popup_range` | `hours` | Period of the popup: `hours` (last `hours_to_show` hours), `year` (since 1 January this year) or `previous_year` (since 1 January last year) |
+| `hours_to_show` | `4380` | Period of the popup in hours (4380 ≈ 6 months), used with `popup_range: hours` |
 | `popup_title` | `Groundwater level history` | Title of the history popup |
 | `statistic_id` | – | Long-term statistic for the popup instead of the sensor history, drawn as daily values (e.g. `wasserportal:groundwater_level`, see [Import all measurements](#import-all-measurements-optional)) |
 
@@ -347,7 +353,8 @@ A tap (or Enter/Space) opens a dialog with Home Assistant's built-in `history-gr
 level sensor. Close it with the × button, a click outside or Escape. The popup needs no browser_mod.
 
 With `statistic_id` the popup shows Home Assistant's `statistics-graph` card instead: daily mean
-values of that statistic over `hours_to_show` (converted to days), with the y-axis fitted to the data.
+values of that statistic over the popup period (converted to whole days, rounded up so the first day
+is never cut off), with the y-axis fitted to the data.
 For external statistics (IDs with a colon, e.g. `wasserportal:groundwater_level`) the graph has no
 title: its title links to the history panel, which cannot open external statistics and reports
 "entity not found". The popup's own title stays.
@@ -360,6 +367,7 @@ dialog attached to `document.body` would open, but the graph would stay empty.
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.5.0 | 2026-09-27 | New option `popup_range`: the popup can start on 1 January of this or the previous year instead of a fixed number of hours (also in the visual editor). README: the import example starts on 1 January of the previous year. |
 | 1.4.1 | 2026-09-27 | Popup with an external statistic: no graph title, because the title's history link reported "entity not found" for external statistics. |
 | 1.4.0 | 2026-09-27 | New option `statistic_id`: the popup shows a long-term statistic as daily values instead of the sensor history. README: optional import of all measurements with their real dates (shell command + automation). |
 | 1.3.0 | 2026-09-27 | English UI, editor and documentation. Generic maintenance text ("Data source under maintenance"). The stub config finds sensors with `groundwater` or `grundwasser` in the entity ID. First public release. |
