@@ -1,10 +1,10 @@
 /**
- * ha-groundwater-level-card v1.4.0
+ * ha-groundwater-level-card v1.4.1
  * Groundwater level tile with liquid-fill animation and history popup.
  * No dependencies (no Mushroom, card-mod or browser_mod). Details: README.md
  */
 
-const CARD_VERSION = '1.4.0';
+const CARD_VERSION = '1.4.1';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
@@ -334,7 +334,9 @@ class HaGroundwaterLevelCard extends HTMLElement {
     const card = helpers.createCardElement(c.statistic_id
       ? {
         type: 'statistics-graph',
-        title: 'History',
+        // The card links its title to the history panel, which cannot open external
+        // statistics (domain:id) and reports "entity not found" — no title for those.
+        ...(c.statistic_id.includes(':') ? {} : { title: 'History' }),
         entities: [c.statistic_id],
         period: 'day',
         stat_types: ['mean'],

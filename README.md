@@ -348,6 +348,9 @@ level sensor. Close it with the × button, a click outside or Escape. The popup 
 
 With `statistic_id` the popup shows Home Assistant's `statistics-graph` card instead: daily mean
 values of that statistic over `hours_to_show` (converted to days), with the y-axis fitted to the data.
+For external statistics (IDs with a colon, e.g. `wasserportal:groundwater_level`) the graph has no
+title: its title links to the history panel, which cannot open external statistics and reports
+"entity not found". The popup's own title stays.
 
 The dialog is attached inside `<home-assistant>`'s shadow root, like Home Assistant's own dialogs.
 The history graph reads its theme data through a Lit context provided by `<home-assistant>`; a
@@ -357,6 +360,7 @@ dialog attached to `document.body` would open, but the graph would stay empty.
 
 | Version | Date | Changes |
 |---|---|---|
+| 1.4.1 | 2026-09-27 | Popup with an external statistic: no graph title, because the title's history link reported "entity not found" for external statistics. |
 | 1.4.0 | 2026-09-27 | New option `statistic_id`: the popup shows a long-term statistic as daily values instead of the sensor history. README: optional import of all measurements with their real dates (shell command + automation). |
 | 1.3.0 | 2026-09-27 | English UI, editor and documentation. Generic maintenance text ("Data source under maintenance"). The stub config finds sensors with `groundwater` or `grundwasser` in the entity ID. First public release. |
 | 1.2.0 | 2026-09-27 | Per-level `animation` switch: without animation no wave and a straight vertical edge at the fill level. |
