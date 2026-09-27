@@ -1,0 +1,4 @@
+.DS_Store
+*.bak
+# Legacy Mushroom/card-mod tile, kept locally only (contains local entity IDs)
+ha-groundwater-level.yaml
