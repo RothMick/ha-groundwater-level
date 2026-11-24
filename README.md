@@ -367,7 +367,7 @@ dialog attached to `document.body` would open, but the graph would stay empty.
 
 | Version | Date | Changes |
 |---|---|---|
-| 1.6.0 | 2026-11-24 | Work in progress: code cleanup and reworked wave rendering. |
+| 1.6.0 | 2026-11-24 | New wave rendering: two sine-wave layers scroll along the fill edge in opposite directions (replaces the rotating shape); respects `prefers-reduced-motion`. Code cleanup. |
 | 1.5.0 | 2026-09-27 | New option `popup_range`: the popup can start on 1 January of this or the previous year instead of a fixed number of hours (also in the visual editor). README: the import example starts on 1 January of the previous year. |
 | 1.4.1 | 2026-09-27 | Popup with an external statistic: no graph title, because the title's history link reported "entity not found" for external statistics. |
 | 1.4.0 | 2026-09-27 | New option `statistic_id`: the popup shows a long-term statistic as daily values instead of the sensor history. README: optional import of all measurements with their real dates (shell command + automation). |

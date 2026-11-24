@@ -8,11 +8,25 @@ const CARD_VERSION = '1.6.0';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
+const DEFAULT_HOURS = 4380;
+
+// Two wave layers along the fill edge: [mean edge offset, amplitude, period] in px.
+// The mean edge sits at the fill level; the layers scroll vertically in opposite directions.
+const WAVE_FRONT = { mean: 12, amp: 7, period: 40 };
+const WAVE_BACK = { mean: 20, amp: 12, period: 64 };
+
+// Tileable mask: solid to the left of a sine-like edge (quadratic curves, mirrored by T).
+const waveMask = ({ mean: m, amp: a, period: p }) => {
+  const w = m + a + 1;
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${w}' height='${p}'>` +
+    `<path d='M0 0H${m}Q${m + 2 * a} ${p / 4} ${m} ${p / 2}T${m} ${p}H0Z'/></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+};
 
 const DEFAULT_LEVELS = [
-  { below: 37, fill: 60, color: '#966d1d', speed: 8 },
-  { below: 39, fill: 80, color: '#1d8296', speed: 8 },
-  { fill: 95, color: '#961d1d', speed: 8 },
+  { below: 37, fill: 60, color: '#966d1d' },
+  { below: 39, fill: 80, color: '#1d8296' },
+  { fill: 95, color: '#961d1d' },
 ];
 const NO_DATA = { fill: 100, color: '#5a5a5a', speed: 20 };
 const MISSING = ['unavailable', 'unknown', 'none', ''];
@@ -29,6 +43,9 @@ const subtitleMode = c => (c.subtitle_template ? 'template' : c.subtitle_entity 
 // Hours from local midnight on 1 January of this (0) or the previous (1) year until now.
 const hoursSinceYearStart = (yearsBack, now = new Date()) =>
   Math.ceil((now - new Date(now.getFullYear() - yearsBack, 0, 1)) / 3600000);
+
+// Copy without empty values (editor: an empty field removes the key).
+const prune = obj => Object.fromEntries(Object.entries(obj).filter(([, v]) => v !== '' && v != null));
 
 const levelLimit = l => (l.below == null || l.below === '' || isNaN(Number(l.below)) ? Infinity : Number(l.below));
 
@@ -117,7 +134,7 @@ class HaGroundwaterLevelCard extends HTMLElement {
   setConfig(config) {
     if (!config?.entity) throw new Error('entity is required');
     this._config = {
-      hours_to_show: 4380,
+      hours_to_show: DEFAULT_HOURS,
       popup_title: 'Groundwater level history',
       ...config,
     };
@@ -172,16 +189,32 @@ class HaGroundwaterLevelCard extends HTMLElement {
         .bar, .wave { position: absolute; background: var(--liq-color); }
         .bar {
           top: 0; left: 0; bottom: 0; z-index: -1;
-          width: calc(var(--liq-level) - 60px);
+          /* +1px overlap hides the antialiasing seam to the front wave */
+          width: calc(var(--liq-level) - ${WAVE_FRONT.mean}px + 1px);
           transition: width .5s cubic-bezier(.25, .1, .25, 1), background .5s ease;
         }
+        /* Taller than the card by one period, so scrolling by one period never shows a gap */
         .wave {
-          z-index: -2; width: 120px; height: 120px; border-radius: 40%;
-          left: calc(var(--liq-level) - 120px); top: calc(50% - 60px);
-          animation: spin var(--wave-speed) linear infinite;
+          height: calc(100% + var(--period)); will-change: transform;
+          -webkit-mask: var(--mask) 0 0 / 100% var(--period) repeat-y;
+          mask: var(--mask) 0 0 / 100% var(--period) repeat-y;
           transition: left .5s cubic-bezier(.25, .1, .25, 1), background .5s ease;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+        .front {
+          --period: ${WAVE_FRONT.period}px; --mask: ${waveMask(WAVE_FRONT)};
+          z-index: -2; top: 0; width: ${WAVE_FRONT.mean + WAVE_FRONT.amp + 1}px;
+          left: calc(var(--liq-level) - ${WAVE_FRONT.mean}px);
+          animation: up var(--wave-speed) linear infinite;
+        }
+        .back {
+          --period: ${WAVE_BACK.period}px; --mask: ${waveMask(WAVE_BACK)};
+          z-index: -3; top: calc(-1 * var(--period)); opacity: .45; width: ${WAVE_BACK.mean + WAVE_BACK.amp + 1}px;
+          left: calc(var(--liq-level) - ${WAVE_BACK.mean}px);
+          animation: down calc(var(--wave-speed) * 1.6) linear infinite;
+        }
+        @keyframes up { to { transform: translateY(calc(-1 * var(--period))); } }
+        @keyframes down { to { transform: translateY(var(--period)); } }
+        @media (prefers-reduced-motion: reduce) { .wave { animation: none; } }
         /* Without animation: no wave, the bar ends with a straight edge exactly at the fill level */
         ha-card.static .wave { display: none; }
         ha-card.static .bar { width: var(--liq-level); }
@@ -202,7 +235,7 @@ class HaGroundwaterLevelCard extends HTMLElement {
         ha-card:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 2px; }
       </style>
       <ha-card tabindex="0" role="button">
-        <div class="bar"></div><div class="wave"></div>
+        <div class="bar"></div><div class="wave back"></div><div class="wave front"></div>
         <div class="shape"><ha-icon></ha-icon></div>
         <div class="text"><div class="primary"></div><div class="secondary"></div></div>
       </ha-card>`;
@@ -458,17 +491,14 @@ class HaGroundwaterLevelCardEditor extends HTMLElement {
   }
 
   _patch(values) {
-    const cfg = { ...this._config, ...values };
-    Object.keys(cfg).forEach(k => { if (cfg[k] === '' || cfg[k] == null) delete cfg[k]; });
+    const cfg = prune({ ...this._config, ...values });
     this._config = cfg;
     this.dispatchEvent(new CustomEvent('config-changed', { detail: { config: cfg }, bubbles: true, composed: true }));
   }
 
   _setLevel(i, values) {
     const levels = this._levels();
-    const level = { ...levels[i], ...values };
-    Object.keys(level).forEach(k => { if (level[k] === '' || level[k] == null) delete level[k]; });
-    levels[i] = level;
+    levels[i] = prune({ ...levels[i], ...values });
     this._patch({ levels });
   }
 
@@ -624,7 +654,7 @@ class HaGroundwaterLevelCardEditor extends HTMLElement {
     ];
     const range = c.popup_range || 'hours';
     this._setupForm('form-popup', popupSchema(range),
-      { popup_title: c.popup_title || '', popup_range: range, hours_to_show: c.hours_to_show ?? 4380, statistic_id: c.statistic_id || '' },
+      { popup_title: c.popup_title || '', popup_range: range, hours_to_show: c.hours_to_show ?? DEFAULT_HOURS, statistic_id: c.statistic_id || '' },
       v => {
         const r = v.popup_range || 'hours';
         // Only store non-default ranges; hours_to_show only matters for the fixed-hours range.
