@@ -1,10 +1,10 @@
 /**
- * ha-groundwater-level-card v1.5.0
+ * ha-groundwater-level-card v1.6.0
  * Groundwater level tile with liquid-fill animation and history popup.
  * No dependencies (no Mushroom, card-mod or browser_mod). Details: README.md
  */
 
-const CARD_VERSION = '1.5.0';
+const CARD_VERSION = '1.6.0';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
