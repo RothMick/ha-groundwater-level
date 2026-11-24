@@ -12,8 +12,8 @@ const DEFAULT_HOURS = 4380;
 
 // Two wave layers along the fill edge: [mean edge offset, amplitude, period] in px.
 // The mean edge sits at the fill level; the layers scroll vertically in opposite directions.
-const WAVE_FRONT = { mean: 12, amp: 7, period: 40 };
-const WAVE_BACK = { mean: 20, amp: 12, period: 64 };
+const WAVE_FRONT = { mean: 8, amp: 4, period: 48 };
+const WAVE_BACK = { mean: 13, amp: 7, period: 80 };
 
 // Tileable mask: solid to the left of a sine-like edge (quadratic curves, mirrored by T).
 const waveMask = ({ mean: m, amp: a, period: p }) => {
