@@ -1,10 +1,10 @@
 /**
- * ha-groundwater-level-card v1.6.0
+ * ha-groundwater-level-card v1.6.1
  * Groundwater level tile with liquid-fill animation and history popup.
  * No dependencies (no Mushroom, card-mod or browser_mod). Details: README.md
  */
 
-const CARD_VERSION = '1.6.0';
+const CARD_VERSION = '1.6.1';
 const MAX_LEVELS = 5;
 const DEFAULT_SPEED = 8;
 const DEFAULT_FILL = 80;
@@ -196,8 +196,9 @@ class HaGroundwaterLevelCard extends HTMLElement {
         /* Taller than the card by one period, so scrolling by one period never shows a gap */
         .wave {
           height: calc(100% + var(--period)); will-change: transform;
-          -webkit-mask: var(--mask) 0 0 / 100% var(--period) repeat-y;
-          mask: var(--mask) 0 0 / 100% var(--period) repeat-y;
+          -webkit-mask-image: var(--mask); mask-image: var(--mask);
+          -webkit-mask-size: 100% var(--period); mask-size: 100% var(--period);
+          -webkit-mask-repeat: repeat-y; mask-repeat: repeat-y;
           transition: left .5s cubic-bezier(.25, .1, .25, 1), background .5s ease;
         }
         .front {
@@ -214,7 +215,6 @@ class HaGroundwaterLevelCard extends HTMLElement {
         }
         @keyframes up { to { transform: translateY(calc(-1 * var(--period))); } }
         @keyframes down { to { transform: translateY(var(--period)); } }
-        @media (prefers-reduced-motion: reduce) { .wave { animation: none; } }
         /* Without animation: no wave, the bar ends with a straight edge exactly at the fill level */
         ha-card.static .wave { display: none; }
         ha-card.static .bar { width: var(--liq-level); }
