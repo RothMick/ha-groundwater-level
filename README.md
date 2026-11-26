@@ -375,7 +375,7 @@ dialog attached to `document.body` would open, but the graph would stay empty.
 | 1.3.0 | 2026-09-27 | English UI, editor and documentation. Generic maintenance text ("Data source under maintenance"). The stub config finds sensors with `groundwater` or `grundwasser` in the entity ID. First public release. |
 | 1.2.0 | 2026-09-27 | Per-level `animation` switch: without animation no wave and a straight vertical edge at the fill level. |
 | 1.1.0 | 2026-09-27 | Visual editor. Up to 5 threshold levels with color, fill width and wave speed. Second line from an entity or a Jinja2 template. Text shadow removed. `date_entity`/`name` replaced by `subtitle_entity`/`subtitle_prefix`. |
-| 1.0.0 | 2026-09-26 | First version: liquid-fill tile with maintenance and "no data" states and a history popup, without Mushroom, card-mod or browser_mod. |
+| 1.0.0 | 2026-09-26 | First version: liquid-fill tile with maintenance and "no data" states and a history popup, without Mushroom, card-mod or browser_mod. The tile and its liquid animation build on the ideas and great work of [Anashost/HA-Animated-cards](https://github.com/Anashost/HA-Animated-cards). |
 
 ## License
 
